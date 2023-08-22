@@ -135,7 +135,7 @@ def get_rss_response(url, max_entries):
 
   return res
 
-# get X68KBBS response
+# get OPENBBS response (dshell format)
 def get_x68kbbs_response(url, x68kbbs_client, x68kbbs_token, max_entries):
 
   try:
@@ -184,6 +184,48 @@ def get_x68kbbs_response(url, x68kbbs_client, x68kbbs_token, max_entries):
 """
 
     res += "\n[EOF]\n"
+
+  except Exception as e:
+    res = None
+
+  return res
+
+# get OPENBBS response (tsv format)
+def get_openbbs_response(url, openbbs_client, openbbs_token, max_entries):
+
+  try:
+
+    m = re.match(r'^(.+\/)(\d+)$', url)
+    if m:
+      openbbs_url = m.group(1)
+      openbbs_board_id = m.group(2)
+    else:
+      openbbs_url = url
+      openbbs_board_id = "1"
+
+    param = { "client": openbbs_client,
+              "token": openbbs_token,
+              "query": [{ "function": "x68kbbs_test",
+                          "command": "get_logs",
+                          "board_id": openbbs_board_id,
+                          "last": max_entries }]
+            }
+
+    res_bbs = requests.post(openbbs_url, json=param).json()
+    openbbs_board_name = res_bbs[0]['return'][openbbs_board_id]['board_name']
+
+    res = f"{openbbs_board_id}\t{openbbs_board_name}\n"
+
+    for e in res_bbs[0]['return'][openbbs_board_id]['board_logs'].items():
+      user_id = e[1]['user_id']
+      user_name = e[1]['user_name']
+      content = e[1]['content']
+      timestamp = e[1]['timestamp']
+      dt = datetime.datetime.fromisoformat(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+      edited = e[1]['edited']
+      edited_flag = " (edited)" if edited == "1" else ""
+
+      res += f"{dt}\t{user_id}\t{user_name}\t{content}\n"
 
   except Exception as e:
     res = None
@@ -324,6 +366,15 @@ def run_service(serial_device, serial_baudrate, max_entries, x68kbbs_client, x68
           res = get_x68kbbs_response(url, x68kbbs_client, x68kbbs_token, max_entries)
         else:
           res = get_rss_response(url, max_entries)
+        if res:
+          respond(port, RESPONSE_OK, res)
+        else:
+          respond(port, RESPONSE_BAD_REQUEST)
+
+      # request handler - openbbs
+      elif request_body_str.startswith("/openbbs?link="):
+        url = request_body_str[14:]
+        res = get_openbbs_response(url, x68kbbs_client, x68kbbs_token, max_entries)
         if res:
           respond(port, RESPONSE_OK, res)
         else:
